@@ -96,8 +96,10 @@ wallSlider.addEventListener('input', (e) => {
     wallVal.innerText = WALL_HEIGHT.toFixed(1)
     tileHeights[1] = WALL_HEIGHT
     tileHeights[5] = WALL_HEIGHT
-    tileHeights[11] = WALL_HEIGHT; tileHeights[12] = WALL_HEIGHT; tileHeights[13] = WALL_HEIGHT; tileHeights[14] = WALL_HEIGHT;
-    tileHeights[51] = WALL_HEIGHT; tileHeights[52] = WALL_HEIGHT; tileHeights[53] = WALL_HEIGHT; tileHeights[54] = WALL_HEIGHT;
+    for (let i = 1; i <= 15; i++) {
+        tileHeights[100 + i] = WALL_HEIGHT
+        tileHeights[500 + i] = WALL_HEIGHT
+    }
     
     if (OBS_HEIGHT > WALL_HEIGHT) {
         OBS_HEIGHT = WALL_HEIGHT
@@ -156,9 +158,9 @@ if (alignInput) {
         
         updateAlignLabel()
         
-        // Update the active paint brush
-        if (placeMode !== null && (placeMode === 1 || (placeMode >= 11 && placeMode <= 14))) {
-            placeMode = val === 0 ? 1 : 10 + val
+        // Update the active paint brush using bitmask logic (1:Top, 2:Right, 4:Bottom, 8:Left)
+        if (placeMode !== null && (placeMode === 1 || placeMode >= 100)) {
+            placeMode = val === 0 ? 1 : 100 + (1 << (val - 1))
         }
         
         // Dynamically snap currently selected walls to the new edge alignment
@@ -167,13 +169,11 @@ if (alignInput) {
             selectedGroups.forEach(group => {
                 group.forEach(t => {
                     const id = levelMap[t.row][t.col]
-                    // Update standard un-combined walls
-                    if (id === 1 || (id >= 11 && id <= 14)) {
-                        levelMap[t.row][t.col] = val === 0 ? 1 : 10 + val
+                    if (id === 1 || (id >= 101 && id <= 115)) {
+                        levelMap[t.row][t.col] = val === 0 ? 1 : 100 + (1 << (val - 1))
                     } 
-                    // Update grouped/combined walls
-                    else if (id === 5 || (id >= 51 && id <= 54)) {
-                        levelMap[t.row][t.col] = val === 0 ? 5 : 50 + val
+                    else if (id === 5 || (id >= 501 && id <= 515)) {
+                        levelMap[t.row][t.col] = val === 0 ? 5 : 500 + (1 << (val - 1))
                     }
                 })
             })
@@ -183,13 +183,13 @@ if (alignInput) {
 
 // Toggle wall placement mode
 btnAddWall.addEventListener('click', () => {
-    const isActive = placeMode !== null && (placeMode === 1 || (placeMode >= 11 && placeMode <= 14))
+    const isActive = placeMode !== null && (placeMode === 1 || placeMode >= 100)
     if (isActive) {
         placeMode = null
         alignRow.style.display = 'none'
     } else {
         const val = alignInput ? (parseInt(alignInput.value) || 0) : 0
-        placeMode = val === 0 ? 1 : 10 + val
+        placeMode = val === 0 ? 1 : 100 + (1 << (val - 1))
         alignRow.style.display = 'flex'
     }
     btnAddWall.classList.toggle('active-tool', !isActive)
@@ -276,8 +276,10 @@ document.getElementById('btn-undo').addEventListener('click', () => {
         
         tileHeights[1] = WALL_HEIGHT
         tileHeights[5] = WALL_HEIGHT
-        tileHeights[11] = WALL_HEIGHT; tileHeights[12] = WALL_HEIGHT; tileHeights[13] = WALL_HEIGHT; tileHeights[14] = WALL_HEIGHT;
-        tileHeights[51] = WALL_HEIGHT; tileHeights[52] = WALL_HEIGHT; tileHeights[53] = WALL_HEIGHT; tileHeights[54] = WALL_HEIGHT;
+        for (let i = 1; i <= 15; i++) {
+            tileHeights[100 + i] = WALL_HEIGHT
+            tileHeights[500 + i] = WALL_HEIGHT
+        }
         tileHeights[4] = OBS_HEIGHT
     }
 })

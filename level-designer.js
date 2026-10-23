@@ -65,25 +65,15 @@ function getAccumulated(coord, sizes) {
     return acc
 }
 
-// Map tile integer IDs to specific hex colors
-const tileColors = {
-    0: '#666677', 1: '#444455', 2: '#554444', 3: '#666677', 4: '#885544', 5: '#444455',
-    11: '#444455', 12: '#444455', 13: '#444455', 14: '#444455',
-    51: '#444455', 52: '#444455', 53: '#444455', 54: '#444455'
-}
+// Base map tile integer IDs
+const tileColors = { 0: '#666677', 1: '#444455', 2: '#554444', 3: '#666677', 4: '#885544', 5: '#444455' }
+const tileHeights = { 0: 0, 1: WALL_HEIGHT, 2: 0, 3: 0, 4: OBS_HEIGHT, 5: WALL_HEIGHT }
+const tileCollisions = { 0: false, 1: true, 2: true, 3: false, 4: true, 5: true }
 
-// Map tile integer IDs to specific elevation values
-const tileHeights = {
-    0: 0, 1: WALL_HEIGHT, 2: 0, 3: 0, 4: OBS_HEIGHT, 5: WALL_HEIGHT,
-    11: WALL_HEIGHT, 12: WALL_HEIGHT, 13: WALL_HEIGHT, 14: WALL_HEIGHT,
-    51: WALL_HEIGHT, 52: WALL_HEIGHT, 53: WALL_HEIGHT, 54: WALL_HEIGHT
-}
-
-// Map tile integer IDs to boolean collision states
-const tileCollisions = {
-    0: false, 1: true, 2: true, 3: false, 4: true, 5: true,
-    11: true, 12: true, 13: true, 14: true,
-    51: true, 52: true, 53: true, 54: true
+// Generate dynamic properties for the 15 bitmask composite wall states (101-115) and combined states (501-515)
+for (let i = 1; i <= 15; i++) {
+    tileColors[100 + i] = '#444455'; tileHeights[100 + i] = WALL_HEIGHT; tileCollisions[100 + i] = true
+    tileColors[500 + i] = '#444455'; tileHeights[500 + i] = WALL_HEIGHT; tileCollisions[500 + i] = true
 }
 
 // Define character starting position, speed, and facing direction
@@ -151,7 +141,7 @@ function getCombinedGroup(col, row, face) {
     const id = levelMap[row][col]
     
     group.push({ col, row, face })
-    if (id !== 5 && !(id >= 51 && id <= 54)) return group
+    if (id !== 5 && !(id >= 501 && id <= 515)) return group
     
     const baseFace = Math.floor(face)
     
@@ -223,72 +213,124 @@ function getMousePos(e) {
     }
 }
 
-// Helper to generate precise dynamic footprint polygons for walls and optimize collinear points
+// Helper to generate an array of dynamic footprint polygons based on bitmask combinations
 function getTileFootprint(col, row) {
     const id = levelMap[row][col]
-    const isWall = (id === 1 || id === 5 || (id >= 11 && id <= 14) || (id >= 51 && id <= 54))
-    let pts = []
+    
+    let mask = 0
+    if (id >= 11 && id <= 14) mask = 1 << (id - 11) // Safely port legacy maps
+    if (id >= 51 && id <= 54) mask = 1 << (id - 51)
+    if (id >= 101 && id <= 115) mask = id - 100
+    if (id >= 501 && id <= 515) mask = id - 500
 
-    if (isWall) {
-        const align = (id >= 11 && id <= 14) ? id - 10 : ((id >= 51 && id <= 54) ? id - 50 : 0)
-        
-        // Push pre-calculated edge polygons for aligned walls, allowing them to perfectly tile across the grid
-        if (align === 1) { pts.push({x:0, y:0}, {x:1, y:0}, {x:1, y:0.3}, {x:0, y:0.3}) }
-        else if (align === 2) { pts.push({x:0.7, y:0}, {x:1, y:0}, {x:1, y:1}, {x:0.7, y:1}) }
-        else if (align === 3) { pts.push({x:0, y:0.7}, {x:1, y:0.7}, {x:1, y:1}, {x:0, y:1}) }
-        else if (align === 4) { pts.push({x:0, y:0}, {x:0.3, y:0}, {x:0.3, y:1}, {x:0, y:1}) }
-        else {
-            const inset = 0.35
-            const i0 = inset
-            const i1 = 1.0 - inset
-            
-            // Standard center wall branches out based on neighboring walls
-            const cT = getTileElevation(col, row - 1) > 0
-            const cR = getTileElevation(col + 1, row) > 0
-            const cB = getTileElevation(col, row + 1) > 0
-            const cL = getTileElevation(col - 1, row) > 0
-
-            // Trace raw perimeter exactly, including strict 90-degree corner elbows
-            let rawPts = []
-            if (cT) rawPts.push({x: i0, y: i0}, {x: i0, y: 0}, {x: i1, y: 0}, {x: i1, y: i0})
-            else rawPts.push({x: i0, y: i0}, {x: i1, y: i0})
-
-            if (cR) rawPts.push({x: i1, y: i0}, {x: 1, y: i0}, {x: 1, y: i1}, {x: i1, y: i1})
-            else rawPts.push({x: i1, y: i0}, {x: i1, y: i1})
-
-            if (cB) rawPts.push({x: i1, y: i1}, {x: i1, y: 1}, {x: i0, y: 1}, {x: i0, y: i1})
-            else rawPts.push({x: i1, y: i1}, {x: i0, y: i1})
-
-            if (cL) rawPts.push({x: i0, y: i1}, {x: 0, y: i1}, {x: 0, y: i0}, {x: i0, y: i0})
-            else rawPts.push({x: i0, y: i1}, {x: i0, y: i0})
-
-            // Remove duplicates
-            let unique = []
-            for (let i = 0; i < rawPts.length; i++) {
-                let curr = rawPts[i]
-                let prev = unique.length > 0 ? unique[unique.length - 1] : rawPts[rawPts.length - 1]
-                if (Math.abs(curr.x - prev.x) > 0.001 || Math.abs(curr.y - prev.y) > 0.001) unique.push(curr)
-            }
-            if (unique.length > 1) {
-                let first = unique[0], last = unique[unique.length - 1]
-                if (Math.abs(first.x - last.x) < 0.001 && Math.abs(first.y - last.y) < 0.001) unique.pop()
-            }
-
-            // Merge split face sections by filtering out collinear points
-            for (let i = 0; i < unique.length; i++) {
-                let prev = unique[(i - 1 + unique.length) % unique.length]
-                let curr = unique[i]
-                let next = unique[(i + 1) % unique.length]
-                let cross = (curr.x - prev.x) * (next.y - curr.y) - (curr.y - prev.y) * (next.x - curr.x)
-                
-                if (Math.abs(cross) > 0.001) pts.push(curr)
-            }
+    if (mask > 0) {
+        const t1 = 0.3, t2 = 0.7
+        if (mask === 1) return [[{x:0,y:0}, {x:1,y:0}, {x:1,y:t1}, {x:0,y:t1}]]
+        if (mask === 2) return [[{x:t2,y:0}, {x:1,y:0}, {x:1,y:1}, {x:t2,y:1}]]
+        if (mask === 4) return [[{x:0,y:t2}, {x:1,y:t2}, {x:1,y:1}, {x:0,y:1}]]
+        if (mask === 8) return [[{x:0,y:0}, {x:t1,y:0}, {x:t1,y:1}, {x:0,y:1}]]
+        if (mask === 3) return [[{x:0,y:0}, {x:1,y:0}, {x:1,y:1}, {x:t2,y:1}, {x:t2,y:t1}, {x:0,y:t1}]]
+        if (mask === 6) return [[{x:t2,y:0}, {x:1,y:0}, {x:1,y:1}, {x:0,y:1}, {x:0,y:t2}, {x:t2,y:t2}]]
+        if (mask === 12) return [[{x:0,y:0}, {x:t1,y:0}, {x:t1,y:t2}, {x:1,y:t2}, {x:1,y:1}, {x:0,y:1}]]
+        if (mask === 9) return [[{x:0,y:0}, {x:1,y:0}, {x:1,y:t1}, {x:t1,y:t1}, {x:t1,y:1}, {x:0,y:1}]]
+        if (mask === 5) return [[{x:0,y:0}, {x:1,y:0}, {x:1,y:t1}, {x:0,y:t1}], [{x:0,y:t2}, {x:1,y:t2}, {x:1,y:1}, {x:0,y:1}]]
+        if (mask === 10) return [[{x:t2,y:0}, {x:1,y:0}, {x:1,y:1}, {x:t2,y:1}], [{x:0,y:0}, {x:t1,y:0}, {x:t1,y:1}, {x:0,y:1}]]
+        if (mask === 7) return [[{x:0,y:0}, {x:1,y:0}, {x:1,y:1}, {x:0,y:1}, {x:0,y:t2}, {x:t2,y:t2}, {x:t2,y:t1}, {x:0,y:t1}]]
+        if (mask === 14) return [[{x:t2,y:0}, {x:1,y:0}, {x:1,y:1}, {x:0,y:1}, {x:0,y:0}, {x:t1,y:0}, {x:t1,y:t2}, {x:t2,y:t2}]]
+        if (mask === 13) return [[{x:0,y:0}, {x:1,y:0}, {x:1,y:t1}, {x:t1,y:t1}, {x:t1,y:t2}, {x:1,y:t2}, {x:1,y:1}, {x:0,y:1}]]
+        if (mask === 11) return [[{x:0,y:0}, {x:1,y:0}, {x:1,y:1}, {x:t2,y:1}, {x:t2,y:t1}, {x:t1,y:t1}, {x:t1,y:1}, {x:0,y:1}]]
+        if (mask === 15) return [
+            [{x:0,y:0}, {x:1,y:0}, {x:1,y:t1}, {x:0,y:t1}], [{x:t2,y:0}, {x:1,y:0}, {x:1,y:1}, {x:t2,y:1}],
+            [{x:0,y:t2}, {x:1,y:t2}, {x:1,y:1}, {x:0,y:1}], [{x:0,y:0}, {x:t1,y:0}, {x:t1,y:1}, {x:0,y:1}]
+        ]
+    } else if (id === 1 || id === 5) {
+        const inset = 0.35, i0 = inset, i1 = 1.0 - inset
+        const cT = getTileElevation(col, row - 1) > 0, cR = getTileElevation(col + 1, row) > 0
+        const cB = getTileElevation(col, row + 1) > 0, cL = getTileElevation(col - 1, row) > 0
+        let rawPts = []
+        if (cT) rawPts.push({x: i0, y: i0}, {x: i0, y: 0}, {x: i1, y: 0}, {x: i1, y: i0})
+        else rawPts.push({x: i0, y: i0}, {x: i1, y: i0})
+        if (cR) rawPts.push({x: i1, y: i0}, {x: 1, y: i0}, {x: 1, y: i1}, {x: i1, y: i1})
+        else rawPts.push({x: i1, y: i0}, {x: i1, y: i1})
+        if (cB) rawPts.push({x: i1, y: i1}, {x: i1, y: 1}, {x: i0, y: 1}, {x: i0, y: i1})
+        else rawPts.push({x: i1, y: i1}, {x: i0, y: i1})
+        if (cL) rawPts.push({x: i0, y: i1}, {x: 0, y: i1}, {x: 0, y: i0}, {x: i0, y: i0})
+        else rawPts.push({x: i0, y: i1}, {x: i0, y: i0})
+        let unique = []
+        for (let i = 0; i < rawPts.length; i++) {
+            let curr = rawPts[i]
+            let prev = unique.length > 0 ? unique[unique.length - 1] : rawPts[rawPts.length - 1]
+            if (Math.abs(curr.x - prev.x) > 0.001 || Math.abs(curr.y - prev.y) > 0.001) unique.push(curr)
         }
-    } else {
-        // Standard full tile for floors and obstacles
-        pts.push({x: 0, y: 0}, {x: 1, y: 0}, {x: 1, y: 1}, {x: 0, y: 1})
+        if (unique.length > 1) {
+            let first = unique[0], last = unique[unique.length - 1]
+            if (Math.abs(first.x - last.x) < 0.001 && Math.abs(first.y - last.y) < 0.001) unique.pop()
+        }
+        let pts = []
+        for (let i = 0; i < unique.length; i++) {
+            let prev = unique[(i - 1 + unique.length) % unique.length]
+            let curr = unique[i]
+            let next = unique[(i + 1) % unique.length]
+            let cross = (curr.x - prev.x) * (next.y - curr.y) - (curr.y - prev.y) * (next.x - curr.x)
+            if (Math.abs(cross) > 0.001) pts.push(curr)
+        }
+        return [pts]
     }
-    return pts
+    return [[{x: 0, y: 0}, {x: 1, y: 0}, {x: 1, y: 1}, {x: 0, y: 1}]]
+}
+
+// Extract bitmask value from tile ID
+function getWallMask(id) {
+    if (id >= 11 && id <= 14) return 1 << (id - 11)
+    if (id >= 51 && id <= 54) return 1 << (id - 51)
+    if (id >= 101 && id <= 115) return id - 100
+    if (id >= 501 && id <= 515) return id - 500
+    return 0
+}
+
+// Check if an adjacent tile physically shares and occludes a specific boundary edge
+function hasFlushNeighbor(col, row, baseFace, px1, py1, px2, py2) {
+    let nCol = col, nRow = row
+    if (baseFace === 0) nRow -= 1
+    else if (baseFace === 1) nCol += 1
+    else if (baseFace === 2) nRow += 1
+    else if (baseFace === 3) nCol -= 1
+
+    if (nRow < 0 || nRow >= MAP_ROWS || nCol < 0 || nCol >= MAP_COLS) return false
+
+    const id = levelMap[row][col]
+    const nId = levelMap[nRow][nCol]
+    const elev = tileHeights[id]
+    const nElev = tileHeights[nId]
+
+    if (nElev < elev) return false
+
+    const mask = getWallMask(id)
+    const nMask = getWallMask(nId)
+
+    // Center walls only connect at the middle 0.35 to 0.65 span
+    if (nMask === 0) {
+        return mask === 0
+    }
+
+    const len = Math.hypot(px2 - px1, py2 - py1)
+    if (len > 0.5) {
+        // Full 1.0 edge requires the neighbor to have the opposite full edge bit
+        if (baseFace === 0) return (nMask & 4) !== 0
+        if (baseFace === 1) return (nMask & 8) !== 0
+        if (baseFace === 2) return (nMask & 1) !== 0
+        if (baseFace === 3) return (nMask & 2) !== 0
+    } else {
+        // Short 0.3 end-cap requires the neighbor to continue the same aligned strip
+        if (baseFace === 0 || baseFace === 2) {
+            if (px1 < 0.5 && px2 < 0.5) return (nMask & 8) !== 0
+            if (px1 > 0.5 && px2 > 0.5) return (nMask & 2) !== 0
+        } else {
+            if (py1 < 0.5 && py2 < 0.5) return (nMask & 1) !== 0
+            if (py1 > 0.5 && py2 > 0.5) return (nMask & 4) !== 0
+        }
+    }
+    return false
 }
 
 // Evaluate if isometric mouse position intersects a specific tile's 3D geometry
@@ -298,46 +340,44 @@ function checkTileHit(col, row, mx, my) {
     const accY0 = getAccumulated(row, rowDepths)
     const w = colWidths[col] || 1.0
     const h = rowDepths[row] || 1.0
-
-    const pts = getTileFootprint(col, row)
-    const tops = pts.map(p => project(accX0 + p.x * w, accY0 + p.y * h, elevation))
-    const bots = pts.map(p => project(accX0 + p.x * w, accY0 + p.y * h, 0))
-    
     const pt = { x: mx, y: my }
-    if (isPointInPoly(pt, tops)) return 'top'
 
-    const neighborElevations = [
-        getTileElevation(col, row - 1),
-        getTileElevation(col + 1, row),
-        getTileElevation(col, row + 1),
-        getTileElevation(col - 1, row)
-    ]
+    const polys = getTileFootprint(col, row)
 
-    for (let i = 0; i < tops.length; i++) {
-        const next = (i + 1) % tops.length
-        const dx = tops[next].x - tops[i].x
+    for (let pts of polys) {
+        const tops = pts.map(p => project(accX0 + p.x * w, accY0 + p.y * h, elevation))
+        const bots = pts.map(p => project(accX0 + p.x * w, accY0 + p.y * h, 0))
         
-        const px1 = pts[i].x, py1 = pts[i].y
-        const px2 = pts[next].x, py2 = pts[next].y
-        
-        const baseFace = (Math.abs(px1 - px2) < 0.001) ? (py1 > py2 ? 3 : 1) : (px1 < px2 ? 0 : 2)
-        
-        let isBoundary = false
-        if (py1 === 0 && py2 === 0) isBoundary = true
-        else if (px1 === 1 && px2 === 1) isBoundary = true
-        else if (py1 === 1 && py2 === 1) isBoundary = true
-        else if (px1 === 0 && px2 === 0) isBoundary = true
+        if (isPointInPoly(pt, tops)) return 'top'
 
-        let subFace = 0
-        if (!isBoundary) {
-            if (baseFace === 1 || baseFace === 3) subFace = (py1 < 0.5 && py2 < 0.5) ? 1 : 2
-            else subFace = (px1 < 0.5 && px2 < 0.5) ? 1 : 2
-        }
-        const faceDir = baseFace + (subFace * 0.1)
+        for (let i = 0; i < tops.length; i++) {
+            const next = (i + 1) % tops.length
+            const dx = tops[next].x - tops[i].x
+            
+            const px1 = pts[i].x, py1 = pts[i].y
+            const px2 = pts[next].x, py2 = pts[next].y
+            
+            const baseFace = (Math.abs(px1 - px2) < 0.001) ? (py1 > py2 ? 3 : 1) : (px1 < px2 ? 0 : 2)
+            
+            let isBoundary = false
+            if (py1 === 0 && py2 === 0) isBoundary = true
+            else if (px1 === 1 && px2 === 1) isBoundary = true
+            else if (py1 === 1 && py2 === 1) isBoundary = true
+            else if (px1 === 0 && px2 === 0) isBoundary = true
 
-        if (elevation > 0 && dx < 0 && (!isBoundary || elevation > neighborElevations[baseFace])) {
-            const sidePoly = [tops[i], tops[next], bots[next], bots[i]]
-            if (isPointInPoly(pt, sidePoly)) return faceDir
+            let subFace = 0
+            if (!isBoundary) {
+                if (baseFace === 1 || baseFace === 3) subFace = (py1 < 0.5 && py2 < 0.5) ? 1 : 2
+                else subFace = (px1 < 0.5 && px2 < 0.5) ? 1 : 2
+            }
+            const faceDir = baseFace + (subFace * 0.1)
+
+            const isOccluded = isBoundary && hasFlushNeighbor(col, row, baseFace, px1, py1, px2, py2)
+
+            if (elevation > 0 && dx < 0 && !isOccluded) {
+                const sidePoly = [tops[i], tops[next], bots[next], bots[i]]
+                if (isPointInPoly(pt, sidePoly)) return faceDir
+            }
         }
     }
     return null
@@ -448,7 +488,7 @@ document.getElementById('btn-combine').addEventListener('click', () => {
             group.forEach(t => {
                 const oldId = levelMap[t.row][t.col]
                 if (oldId === 1) levelMap[t.row][t.col] = 5
-                else if (oldId >= 11 && oldId <= 14) levelMap[t.row][t.col] = oldId + 40
+                else if (oldId >= 101 && oldId <= 115) levelMap[t.row][t.col] = oldId + 400
             })
         }
         combineTiles(selectedGroups[0])
@@ -467,7 +507,14 @@ canvas.addEventListener('mousedown', (e) => {
         if (clicked && (clicked.col !== Math.floor(player.x) || clicked.row !== Math.floor(player.y))) {
             if (typeof saveState === 'function') saveState()
             isPainting = true
-            levelMap[clicked.row][clicked.col] = placeMode
+            const currentId = levelMap[clicked.row][clicked.col]
+            if (placeMode >= 101 && placeMode <= 115 && currentId >= 101 && currentId <= 115) {
+                levelMap[clicked.row][clicked.col] = 100 + ((currentId - 100) | (placeMode - 100))
+            } else if (placeMode >= 101 && placeMode <= 115 && currentId >= 501 && currentId <= 515) {
+                levelMap[clicked.row][clicked.col] = 500 + ((currentId - 500) | (placeMode - 100))
+            } else {
+                levelMap[clicked.row][clicked.col] = placeMode
+            }
         }
         return
     }
@@ -499,8 +546,15 @@ window.addEventListener('mousemove', (e) => {
             hoveredGroup = [{ col: hovered.col, row: hovered.row, face: 'top' }]
             isHoverError = isPlayerTile
             currentCursor = isPlayerTile ? 'not-allowed' : 'crosshair'
-            if (isPainting && !isPlayerTile && levelMap[hovered.row][hovered.col] !== placeMode) {
-                levelMap[hovered.row][hovered.col] = placeMode
+            if (isPainting && !isPlayerTile) {
+                const currentId = levelMap[hovered.row][hovered.col]
+                if (placeMode >= 101 && placeMode <= 115 && currentId >= 101 && currentId <= 115) {
+                    levelMap[hovered.row][hovered.col] = 100 + ((currentId - 100) | (placeMode - 100))
+                } else if (placeMode >= 101 && placeMode <= 115 && currentId >= 501 && currentId <= 515) {
+                    levelMap[hovered.row][hovered.col] = 500 + ((currentId - 500) | (placeMode - 100))
+                } else if (currentId !== placeMode) {
+                    levelMap[hovered.row][hovered.col] = placeMode
+                }
             }
         } else {
             hoveredGroup = null
@@ -719,188 +773,221 @@ function drawTile(col, row, color, elevation, isBaseOverride = false) {
     const w = colWidths[col] || 1.0
     const h = rowDepths[row] || 1.0
 
-    const pts = isBaseOverride ? 
-        [{x: 0, y: 0}, {x: 1, y: 0}, {x: 1, y: 1}, {x: 0, y: 1}] : 
-        getTileFootprint(col, row)
+    const polys = isBaseOverride ? [[{x: 0, y: 0}, {x: 1, y: 0}, {x: 1, y: 1}, {x: 0, y: 1}]] : getTileFootprint(col, row)
 
-    const tops = pts.map(p => project(accX0 + p.x * w, accY0 + p.y * h, elevation))
-    const bots = pts.map(p => project(accX0 + p.x * w, accY0 + p.y * h, 0))
+    let facesToDraw = []
+    let allTops = []
+    let allBots = []
 
-    const neighborElevations = [
-        getTileElevation(col, row - 1),
-        getTileElevation(col + 1, row),
-        getTileElevation(col, row + 1),
-        getTileElevation(col - 1, row)
-    ]
+    // Pass 1: Pool all faces across all polygon arrays within this grid coordinate
+    for (let pIdx = 0; pIdx < polys.length; pIdx++) {
+        const pts = polys[pIdx]
+        const tops = pts.map(p => project(accX0 + p.x * w, accY0 + p.y * h, elevation))
+        const bots = pts.map(p => project(accX0 + p.x * w, accY0 + p.y * h, 0))
+        allTops.push(tops)
+        allBots.push(bots)
 
-    if (elevation > 0) {
-        const pAccX = getAccumulated(player.x, colWidths)
-        const pAccY = getAccumulated(player.y, rowDepths)
-        const pProj = project(pAccX, pAccY, 0)
-        
-        const tAccX = getAccumulated(col + 0.5, colWidths)
-        const tAccY = getAccumulated(row + 0.5, rowDepths)
-        const tProj = project(tAccX, tAccY, 0)
-        
-        if (tProj.depth > pProj.depth) {
-            const minX = Math.min(...tops.map(t=>t.x), ...bots.map(b=>b.x))
-            const maxX = Math.max(...tops.map(t=>t.x), ...bots.map(b=>b.x))
-            const minY = Math.min(...tops.map(t=>t.y), ...bots.map(b=>b.y))
-            const maxY = Math.max(...tops.map(t=>t.y), ...bots.map(b=>b.y))
+        if (elevation > 0) {
+            const pAccX = getAccumulated(player.x, colWidths)
+            const pAccY = getAccumulated(player.y, rowDepths)
+            const pProj = project(pAccX, pAccY, 0)
             
-            if (pProj.x + 6 > minX && pProj.x - 6 < maxX && pProj.y > minY && pProj.y - 34 < maxY) {
-                ctx.globalAlpha = 0.4
+            const tAccX = getAccumulated(col + 0.5, colWidths)
+            const tAccY = getAccumulated(row + 0.5, rowDepths)
+            const tProj = project(tAccX, tAccY, 0)
+            
+            if (tProj.depth > pProj.depth) {
+                const minX = Math.min(...tops.map(t=>t.x), ...bots.map(b=>b.x))
+                const maxX = Math.max(...tops.map(t=>t.x), ...bots.map(b=>b.x))
+                const minY = Math.min(...tops.map(t=>t.y), ...bots.map(b=>b.y))
+                const maxY = Math.max(...tops.map(t=>t.y), ...bots.map(b=>b.y))
+                
+                if (pProj.x + 6 > minX && pProj.x - 6 < maxX && pProj.y > minY && pProj.y - 34 < maxY) {
+                    ctx.globalAlpha = 0.4
+                }
+            }
+        }
+
+        for (let i = 0; i < tops.length; i++) {
+            const next = (i + 1) % tops.length
+            const dx = tops[next].x - tops[i].x
+            
+            const px1 = pts[i].x, py1 = pts[i].y
+            const px2 = pts[next].x, py2 = pts[next].y
+            
+            const baseFace = (Math.abs(px1 - px2) < 0.001) ? (py1 > py2 ? 3 : 1) : (px1 < px2 ? 0 : 2)
+            
+            let isBoundary = false
+            if (py1 === 0 && py2 === 0) isBoundary = true
+            else if (px1 === 1 && px2 === 1) isBoundary = true
+            else if (py1 === 1 && py2 === 1) isBoundary = true
+            else if (px1 === 0 && px2 === 0) isBoundary = true
+
+            let subFace = 0
+            if (!isBoundary) {
+                if (baseFace === 1 || baseFace === 3) subFace = (py1 < 0.5 && py2 < 0.5) ? 1 : 2
+                else subFace = (px1 < 0.5 && px2 < 0.5) ? 1 : 2
+            }
+            const faceDir = baseFace + (subFace * 0.1)
+            
+            const isOccluded = isBoundary && hasFlushNeighbor(col, row, baseFace, px1, py1, px2, py2)
+            
+            if ((elevation > 0 && dx < 0 && !isOccluded) || isBaseOverride) {
+                const faceDepth = tops[i].depth + tops[next].depth + bots[next].depth + bots[i].depth
+                facesToDraw.push({ pIdx, i, next, px1, py1, px2, py2, faceDir, faceDepth })
             }
         }
     }
 
-    for (let i = 0; i < tops.length; i++) {
-        const next = (i + 1) % tops.length
-        const dx = tops[next].x - tops[i].x
-        
-        const px1 = pts[i].x, py1 = pts[i].y
-        const px2 = pts[next].x, py2 = pts[next].y
-        
-        const baseFace = (Math.abs(px1 - px2) < 0.001) ? (py1 > py2 ? 3 : 1) : (px1 < px2 ? 0 : 2)
-        
-        let isBoundary = false
-        if (py1 === 0 && py2 === 0) isBoundary = true
-        else if (px1 === 1 && px2 === 1) isBoundary = true
-        else if (py1 === 1 && py2 === 1) isBoundary = true
-        else if (px1 === 0 && px2 === 0) isBoundary = true
+    // Pass 2: Sort pooled faces back-to-front dynamically for painter's occlusion
+    facesToDraw.sort((a, b) => a.faceDepth - b.faceDepth)
 
-        let subFace = 0
-        if (!isBoundary) {
-            if (baseFace === 1 || baseFace === 3) subFace = (py1 < 0.5 && py2 < 0.5) ? 1 : 2
-            else subFace = (px1 < 0.5 && px2 < 0.5) ? 1 : 2
+    // Pass 3: Draw vertical faces
+    for (let f of facesToDraw) {
+        const tops = allTops[f.pIdx]
+        const bots = allBots[f.pIdx]
+        
+        const isFaceSelected = selectedGroups.some(g => g.some(t => t.col === col && t.row === row && (matchFace(t.face, f.faceDir) || id === 4)))
+        const isFaceHovered = (hoveredGroup && hoveredGroup.some(t => t.col === col && t.row === row && (matchFace(t.face, f.faceDir) || id === 4)))
+
+        let strokeColor = '#222'
+        let strokeWidth = 1
+        if (isFaceSelected && !isBaseOverride) { strokeColor = '#ffcc00'; strokeWidth = 2 } 
+        else if (isFaceHovered && !isBaseOverride) { strokeColor = isHoverError ? '#ff0000' : '#ffffff'; strokeWidth = 2 }
+
+        ctx.beginPath()
+        ctx.moveTo(tops[f.i].x, tops[f.i].y)
+        ctx.lineTo(tops[f.next].x, tops[f.next].y)
+        ctx.lineTo(bots[f.next].x, bots[f.next].y)
+        ctx.lineTo(bots[f.i].x, bots[f.i].y)
+        ctx.closePath()
+        
+        ctx.fillStyle = color
+        ctx.fill()
+        
+        const dy = tops[f.next].y - tops[f.i].y
+        ctx.fillStyle = dy < 0 ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.2)'
+        ctx.fill()
+        
+        if (isFaceSelected && !isBaseOverride) {
+            ctx.fillStyle = 'rgba(255, 255, 0, 0.3)'
+            ctx.fill()
         }
-        const faceDir = baseFace + (subFace * 0.1)
         
-        if ((elevation > 0 && dx < 0 && (!isBoundary || elevation > neighborElevations[baseFace])) || isBaseOverride) {
-            const isFaceSelected = selectedGroups.some(g => g.some(t => t.col === col && t.row === row && (matchFace(t.face, faceDir) || id === 4)))
-            const isFaceHovered = (hoveredGroup && hoveredGroup.some(t => t.col === col && t.row === row && (matchFace(t.face, faceDir) || id === 4)))
-
-            let strokeColor = '#222'
-            let strokeWidth = 1
-            if (isFaceSelected && !isBaseOverride) { strokeColor = '#ffcc00'; strokeWidth = 2 } 
-            else if (isFaceHovered && !isBaseOverride) { strokeColor = isHoverError ? '#ff0000' : '#ffffff'; strokeWidth = 2 }
-
+        if (!isBaseOverride) {
             ctx.beginPath()
-            ctx.moveTo(tops[i].x, tops[i].y)
-            ctx.lineTo(tops[next].x, tops[next].y)
-            ctx.lineTo(bots[next].x, bots[next].y)
-            ctx.lineTo(bots[i].x, bots[i].y)
-            ctx.closePath()
+            ctx.moveTo(tops[f.i].x, tops[f.i].y)
+            ctx.lineTo(tops[f.next].x, tops[f.next].y)
             
-            ctx.fillStyle = color
-            ctx.fill()
+            const isCombined = (id === 5 || (id >= 501 && id <= 515))
             
-            const dy = tops[next].y - tops[i].y
-            ctx.fillStyle = dy < 0 ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.2)'
-            ctx.fill()
-            
-            if (isFaceSelected && !isBaseOverride) {
-                ctx.fillStyle = 'rgba(255, 255, 0, 0.3)'
-                ctx.fill()
+            let drawEndVert = true
+            if (isCombined) {
+                if (f.px2 === 1 && hasFlushNeighbor(col, row, 1, f.px1, f.py1, f.px2, f.py2) && (levelMap[row][col + 1] === 5 || levelMap[row][col + 1] >= 501)) drawEndVert = false
+                if (f.px2 === 0 && hasFlushNeighbor(col, row, 3, f.px1, f.py1, f.px2, f.py2) && (levelMap[row][col - 1] === 5 || levelMap[row][col - 1] >= 501)) drawEndVert = false
+                if (f.py2 === 1 && hasFlushNeighbor(col, row, 2, f.px1, f.py1, f.px2, f.py2) && (levelMap[row + 1][col] === 5 || levelMap[row + 1][col] >= 501)) drawEndVert = false
+                if (f.py2 === 0 && hasFlushNeighbor(col, row, 0, f.px1, f.py1, f.px2, f.py2) && (levelMap[row - 1][col] === 5 || levelMap[row - 1][col] >= 501)) drawEndVert = false
             }
             
-            if (!isBaseOverride) {
-                ctx.beginPath()
+            if (drawEndVert) {
+                ctx.lineTo(bots[f.next].x, bots[f.next].y)
+            } else {
+                ctx.moveTo(bots[f.next].x, bots[f.next].y)
+            }
+            
+            ctx.lineTo(bots[f.i].x, bots[f.i].y)
+            
+            let drawStartVert = true
+            if (isCombined) {
+                if (f.px1 === 1 && hasFlushNeighbor(col, row, 1, f.px1, f.py1, f.px2, f.py2) && (levelMap[row][col + 1] === 5 || levelMap[row][col + 1] >= 501)) drawStartVert = false
+                if (f.px1 === 0 && hasFlushNeighbor(col, row, 3, f.px1, f.py1, f.px2, f.py2) && (levelMap[row][col - 1] === 5 || levelMap[row][col - 1] >= 501)) drawStartVert = false
+                if (f.py1 === 1 && hasFlushNeighbor(col, row, 2, f.px1, f.py1, f.px2, f.py2) && (levelMap[row + 1][col] === 5 || levelMap[row + 1][col] >= 501)) drawStartVert = false
+                if (f.py1 === 0 && hasFlushNeighbor(col, row, 0, f.px1, f.py1, f.px2, f.py2) && (levelMap[row - 1][col] === 5 || levelMap[row - 1][col] >= 501)) drawStartVert = false
+            }
+            
+            if (drawStartVert) {
+                ctx.lineTo(tops[f.i].x, tops[f.i].y)
+            }
+            
+            ctx.strokeStyle = strokeColor
+            ctx.lineWidth = strokeWidth
+            ctx.lineJoin = 'round'
+            ctx.lineCap = 'round'
+            ctx.stroke()
+        }
+        ctx.lineWidth = 1 
+    }
+
+    // Pass 4: Sort and draw top roofs AFTER all vertical faces are layered
+    let roofsToDraw = []
+    for (let pIdx = 0; pIdx < polys.length; pIdx++) {
+        let depthSum = 0
+        for (let t of allTops[pIdx]) depthSum += t.depth
+        roofsToDraw.push({ pIdx, pts: polys[pIdx], tops: allTops[pIdx], depth: depthSum })
+    }
+    roofsToDraw.sort((a, b) => a.depth - b.depth)
+
+    for (let roof of roofsToDraw) {
+        const tops = roof.tops
+        const pts = roof.pts
+        
+        const isTopSelected = selectedGroups.some(g => g.some(t => t.col === col && t.row === row && (t.face === 'top' || id === 4)))
+        const isTopHovered = (hoveredGroup && hoveredGroup.some(t => t.col === col && t.row === row && (t.face === 'top' || id === 4)))
+
+        let topStrokeColor = '#222'
+        let topStrokeWidth = 1
+        if (isTopSelected && !isBaseOverride) { topStrokeColor = '#ffcc00'; topStrokeWidth = 2 } 
+        else if (isTopHovered && !isBaseOverride) { topStrokeColor = isHoverError ? '#ff0000' : '#ffffff'; topStrokeWidth = 2 }
+
+        ctx.beginPath()
+        ctx.moveTo(tops[0].x, tops[0].y)
+        for (let i = 1; i < tops.length; i++) {
+            ctx.lineTo(tops[i].x, tops[i].y)
+        }
+        ctx.closePath()
+        ctx.fillStyle = color
+        ctx.fill()
+        
+        if (isTopSelected && !isBaseOverride) {
+            ctx.fillStyle = 'rgba(255, 255, 0, 0.4)'
+            ctx.fill()
+        }
+        
+        ctx.beginPath()
+        for (let i = 0; i < tops.length; i++) {
+            const next = (i + 1) % tops.length
+            const px1 = pts[i].x, py1 = pts[i].y
+            const px2 = pts[next].x, py2 = pts[next].y
+            const faceDir = (Math.abs(px1 - px2) < 0.001) ? (py1 > py2 ? 3 : 1) : (px1 < px2 ? 0 : 2)
+
+            let isBoundary = false
+            if (py1 === 0 && py2 === 0) isBoundary = true
+            else if (px1 === 1 && px2 === 1) isBoundary = true
+            else if (py1 === 1 && py2 === 1) isBoundary = true
+            else if (px1 === 0 && px2 === 0) isBoundary = true
+
+            const isOccluded = isBoundary && hasFlushNeighbor(col, row, faceDir, px1, py1, px2, py2)
+
+            if (!isOccluded || isBaseOverride || elevation <= 0) {
                 ctx.moveTo(tops[i].x, tops[i].y)
                 ctx.lineTo(tops[next].x, tops[next].y)
-                
-                let drawEndVert = true
-                if (id === 5 || (id >= 51 && id <= 54)) {
-                    if (px2 === 1 && col + 1 < MAP_COLS && levelMap[row][col + 1] === id) drawEndVert = false
-                    if (px2 === 0 && col > 0 && levelMap[row][col - 1] === id) drawEndVert = false
-                    if (py2 === 1 && row + 1 < MAP_ROWS && levelMap[row + 1][col] === id) drawEndVert = false
-                    if (py2 === 0 && row > 0 && levelMap[row - 1][col] === id) drawEndVert = false
-                }
-                
-                if (drawEndVert) {
-                    ctx.lineTo(bots[next].x, bots[next].y)
-                } else {
-                    ctx.moveTo(bots[next].x, bots[next].y)
-                }
-                
-                ctx.lineTo(bots[i].x, bots[i].y)
-                
-                let drawStartVert = true
-                if (id === 5 || (id >= 51 && id <= 54)) {
-                    if (px1 === 1 && col + 1 < MAP_COLS && levelMap[row][col + 1] === id) drawStartVert = false
-                    if (px1 === 0 && col > 0 && levelMap[row][col - 1] === id) drawStartVert = false
-                    if (py1 === 1 && row + 1 < MAP_ROWS && levelMap[row + 1][col] === id) drawStartVert = false
-                    if (py1 === 0 && row > 0 && levelMap[row - 1][col] === id) drawStartVert = false
-                }
-                
-                if (drawStartVert) {
-                    ctx.lineTo(tops[i].x, tops[i].y)
-                }
-                
-                ctx.strokeStyle = strokeColor
-                ctx.lineWidth = strokeWidth
-                ctx.lineJoin = 'round'
-                ctx.lineCap = 'round'
-                ctx.stroke()
             }
-            ctx.lineWidth = 1 
         }
-    }
-
-    const isTopSelected = selectedGroups.some(g => g.some(t => t.col === col && t.row === row && (t.face === 'top' || id === 4)))
-    const isTopHovered = (hoveredGroup && hoveredGroup.some(t => t.col === col && t.row === row && (t.face === 'top' || id === 4)))
-
-    let topStrokeColor = '#222'
-    let topStrokeWidth = 1
-    if (isTopSelected && !isBaseOverride) { topStrokeColor = '#ffcc00'; topStrokeWidth = 2 } 
-    else if (isTopHovered && !isBaseOverride) { topStrokeColor = isHoverError ? '#ff0000' : '#ffffff'; topStrokeWidth = 2 }
-
-    ctx.beginPath()
-    ctx.moveTo(tops[0].x, tops[0].y)
-    for (let i = 1; i < tops.length; i++) {
-        ctx.lineTo(tops[i].x, tops[i].y)
-    }
-    ctx.closePath()
-    ctx.fillStyle = color
-    ctx.fill()
-    
-    if (isTopSelected && !isBaseOverride) {
-        ctx.fillStyle = 'rgba(255, 255, 0, 0.4)'
-        ctx.fill()
-    }
-    
-    ctx.beginPath()
-    for (let i = 0; i < tops.length; i++) {
-        const next = (i + 1) % tops.length
-        const px1 = pts[i].x, py1 = pts[i].y
-        const px2 = pts[next].x, py2 = pts[next].y
-        const faceDir = (Math.abs(px1 - px2) < 0.001) ? (py1 > py2 ? 3 : 1) : (px1 < px2 ? 0 : 2)
-
-        let isBoundary = false
-        if (py1 === 0 && py2 === 0) isBoundary = true
-        else if (px1 === 1 && px2 === 1) isBoundary = true
-        else if (py1 === 1 && py2 === 1) isBoundary = true
-        else if (px1 === 0 && px2 === 0) isBoundary = true
-
-        if (!isBoundary || elevation !== neighborElevations[faceDir] || isBaseOverride || elevation <= 0) {
-            ctx.moveTo(tops[i].x, tops[i].y)
-            ctx.lineTo(tops[next].x, tops[next].y)
+        
+        if ((elevation <= 0 || isBaseOverride) && !isTopSelected && !isTopHovered) {
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)' 
+            ctx.lineWidth = 1 / ZOOM 
+        } else {
+            ctx.strokeStyle = topStrokeColor
+            ctx.lineWidth = topStrokeWidth / ZOOM 
         }
+        
+        ctx.lineJoin = 'round'
+        ctx.lineCap = 'round'
+        ctx.stroke()
+        ctx.lineWidth = 1 
+        ctx.globalAlpha = 1.0 
     }
-    
-    if ((elevation <= 0 || isBaseOverride) && !isTopSelected && !isTopHovered) {
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)' 
-        ctx.lineWidth = 1 / ZOOM 
-    } else {
-        ctx.strokeStyle = topStrokeColor
-        ctx.lineWidth = topStrokeWidth / ZOOM 
-    }
-    
-    ctx.lineJoin = 'round'
-    ctx.lineCap = 'round'
-    ctx.stroke()
-    ctx.lineWidth = 1 
-    ctx.globalAlpha = 1.0 
 }
 
 // Render line of sight cone on the floor plane
@@ -1028,7 +1115,7 @@ function checkCollision(x, y) {
         
         if (tileCollisions[id] && id !== 4 && id !== 2) {
             let isDoorwayWall = false
-            if (id === 1 || id === 5 || (id >= 11 && id <= 14) || (id >= 51 && id <= 54)) {
+            if (id === 1 || id === 5 || (id >= 101 && id <= 115) || (id >= 501 && id <= 515)) {
                 if ((row > 0 && levelMap[row - 1][col] === 3) ||
                     (row < MAP_ROWS - 1 && levelMap[row + 1][col] === 3) ||
                     (col > 0 && levelMap[row][col - 1] === 3) ||
