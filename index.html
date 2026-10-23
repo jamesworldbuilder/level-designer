@@ -7,6 +7,25 @@
 </head>
 <body>
     <div id="controls">
+        <div id="stats-panel">
+            <div>Floor Tiles: <span id="stat-floor-tiles">0</span></div>
+            <div id="stat-sel-row" style="display:none;">Selected Segments: <span id="stat-sel-segments">0</span></div>
+        </div>
+        <div class="control-row" style="margin-bottom: 8px;">
+            <span class="label-text">Grid W/H:</span>
+            <div style="display:flex; align-items:center; flex:1; justify-content:flex-end;">
+                <input type="number" id="grid-cols" class="grid-input" min="1" max="100" value="12">
+                <span style="color:#aaa; font-size:11px; margin:0 4px;">x</span>
+                <input type="number" id="grid-rows" class="grid-input" min="1" max="100" value="12">
+            </div>
+        </div>
+        <div class="control-row" id="wall-align-row" style="display:none; margin-bottom: 8px;">
+            <span class="label-text">Wall Align:</span>
+            <div style="display:flex; align-items:center; flex:1; justify-content:flex-end;">
+                <span id="wall-align-label" style="font-size:11px; margin-right:6px; color:#ffcc00;">Center</span>
+                <input type="number" id="wall-align" class="grid-input" min="0" max="4" value="0" style="width:36px;">
+            </div>
+        </div>
         <div class="control-row">
             <span class="label-text">Size (<span id="size-val">82</span>):</span>
             <input type="range" id="tile-size" min="32" max="128" value="82">
@@ -33,7 +52,7 @@
         </div>
         <div class="control-row">
             <span class="label-text">Zoom (<span id="zoom-val">1.4</span>):</span>
-            <input type="range" id="zoom" min="0.5" max="3.0" step="0.1" value="1.4">
+            <input type="range" id="zoom" min="0.1" max="3.0" step="0.1" value="1.4">
             <button class="btn-step" id="btn-z-down">◀</button>
             <button class="btn-step" id="btn-z-up">▶</button>
         </div>
@@ -43,6 +62,10 @@
             <button class="btn-step" id="btn-r-down">◀</button>
             <button class="btn-step" id="btn-r-up">▶</button>
         </div>
+		<div class="button-row">
+            <button id="btn-add-wall">Add Wall</button>
+            <button id="btn-add-obs">Add Obstacle</button>
+        </div>
         <div class="button-row">
             <button id="btn-undo">Undo Change</button>
             <button id="btn-export">Export Settings</button>
@@ -50,7 +73,7 @@
 		<button id="btn-combine" style="display:none; background-color: #00aa44;">Combine Walls</button>        <textarea id="export-out" readonly rows="4" style="display:none;"></textarea>
     </div>
     <canvas id="game-canvas" width="800" height="600"></canvas>
-    <script src="game-script.js"></script>
+    <script src="level-designer.js"></script>
 	<script src="design-controls.js"></script>
 </body>
 </html>

@@ -16,9 +16,10 @@ const exportOut = document.getElementById('export-out')
 // Store history for undo functionality
 const historyStack = []
 
-// Push current state to history stack
+// Push current state and deep copy of map array to history stack
 function saveState() {
-    historyStack.push({ s: TILE_SIZE, p: CAMERA_PITCH, wh: WALL_HEIGHT, oh: OBS_HEIGHT, z: ZOOM, r: ROTATION })
+    const mapCopy = levelMap.map(row => [...row])
+    historyStack.push({ s: TILE_SIZE, p: CAMERA_PITCH, wh: WALL_HEIGHT, oh: OBS_HEIGHT, z: ZOOM, r: ROTATION, m: mapCopy })
     if (historyStack.length > 100) historyStack.shift()
 }
 
@@ -83,27 +84,11 @@ pitchSlider.addEventListener('input', (e) => {
     CAMERA_PITCH = val
     pitchVal.innerText = CAMERA_PITCH
     
-    // Auto-adjust zoom and center camera to fit bounds perfectly when snapping to 90 degrees
+    // Trigger auto-fit when snapping perfectly to top-down 90 degrees
     if (CAMERA_PITCH === 90) {
-        const totalW = colWidths.reduce((a, b) => a + b, 0) * TILE_SIZE
-        const totalH = rowDepths.reduce((a, b) => a + b, 0) * TILE_SIZE
-        
-        const rad = ROTATION * Math.PI / 180
-        const cos = Math.abs(Math.cos(rad))
-        const sin = Math.abs(Math.sin(rad))
-        
-        const boundW = totalW * cos + totalH * sin
-        const boundH = totalW * sin + totalH * cos
-        
-        let optimalZoom = Math.min(canvas.width / boundW, canvas.height / boundH) * 0.9
-        optimalZoom = Math.max(parseFloat(zoomSlider.min), Math.min(parseFloat(zoomSlider.max), optimalZoom))
-        
-        ZOOM = Math.round(optimalZoom * 10) / 10
-        zoomSlider.value = ZOOM
-        zoomVal.innerText = ZOOM.toFixed(1)
-        
-        cameraX = 0
-        cameraY = 0
+        if (typeof autoFitLevel === 'function') {
+            autoFitLevel()
+        }
     }
 })
 wallSlider.addEventListener('input', (e) => {
@@ -111,6 +96,8 @@ wallSlider.addEventListener('input', (e) => {
     wallVal.innerText = WALL_HEIGHT.toFixed(1)
     tileHeights[1] = WALL_HEIGHT
     tileHeights[5] = WALL_HEIGHT
+    tileHeights[11] = WALL_HEIGHT; tileHeights[12] = WALL_HEIGHT; tileHeights[13] = WALL_HEIGHT; tileHeights[14] = WALL_HEIGHT;
+    tileHeights[51] = WALL_HEIGHT; tileHeights[52] = WALL_HEIGHT; tileHeights[53] = WALL_HEIGHT; tileHeights[54] = WALL_HEIGHT;
     
     if (OBS_HEIGHT > WALL_HEIGHT) {
         OBS_HEIGHT = WALL_HEIGHT
@@ -136,9 +123,111 @@ zoomSlider.addEventListener('input', (e) => {
 rotSlider.addEventListener('input', (e) => {
     ROTATION = parseInt(e.target.value)
     rotVal.innerText = ROTATION
+    if (typeof updateAlignLabel === 'function') updateAlignLabel()
 })
 
-// Revert to last saved state
+// Cache object placement buttons
+const btnAddWall = document.getElementById('btn-add-wall')
+const btnAddObs = document.getElementById('btn-add-obs')
+
+// Handle wall alignment options
+const alignRow = document.getElementById('wall-align-row')
+const alignInput = document.getElementById('wall-align')
+const alignLabel = document.getElementById('wall-align-label')
+
+function updateAlignLabel() {
+    if (!alignLabel || !alignInput) return
+    const val = parseInt(alignInput.value)
+    if (isNaN(val) || val === 0) {
+        alignLabel.innerText = 'Center'
+    } else {
+        const names = ['Top', 'Right', 'Bottom', 'Left']
+        const shift = (typeof ROTATION !== 'undefined' ? ROTATION : 0) / 90
+        const index = (val - 1 + shift) % 4
+        alignLabel.innerText = names[index]
+    }
+}
+
+if (alignInput) {
+    alignInput.addEventListener('input', () => {
+        let val = parseInt(alignInput.value)
+        if (isNaN(val) || val < 0) { val = 0; alignInput.value = 0 }
+        if (val > 4) { val = 4; alignInput.value = 4 }
+        
+        updateAlignLabel()
+        
+        // Update the active paint brush
+        if (placeMode !== null && (placeMode === 1 || (placeMode >= 11 && placeMode <= 14))) {
+            placeMode = val === 0 ? 1 : 10 + val
+        }
+        
+        // Dynamically snap currently selected walls to the new edge alignment
+        if (typeof selectedGroups !== 'undefined' && selectedGroups.length > 0) {
+            if (typeof saveState === 'function') saveState()
+            selectedGroups.forEach(group => {
+                group.forEach(t => {
+                    const id = levelMap[t.row][t.col]
+                    // Update standard un-combined walls
+                    if (id === 1 || (id >= 11 && id <= 14)) {
+                        levelMap[t.row][t.col] = val === 0 ? 1 : 10 + val
+                    } 
+                    // Update grouped/combined walls
+                    else if (id === 5 || (id >= 51 && id <= 54)) {
+                        levelMap[t.row][t.col] = val === 0 ? 5 : 50 + val
+                    }
+                })
+            })
+        }
+    })
+}
+
+// Toggle wall placement mode
+btnAddWall.addEventListener('click', () => {
+    const isActive = placeMode !== null && (placeMode === 1 || (placeMode >= 11 && placeMode <= 14))
+    if (isActive) {
+        placeMode = null
+        alignRow.style.display = 'none'
+    } else {
+        const val = alignInput ? (parseInt(alignInput.value) || 0) : 0
+        placeMode = val === 0 ? 1 : 10 + val
+        alignRow.style.display = 'flex'
+    }
+    btnAddWall.classList.toggle('active-tool', !isActive)
+    btnAddObs.classList.remove('active-tool')
+    selectedGroups = []
+    document.getElementById('btn-combine').style.display = 'none'
+})
+
+// Toggle obstacle placement mode
+btnAddObs.addEventListener('click', () => {
+    placeMode = placeMode === 4 ? null : 4
+    btnAddObs.classList.toggle('active-tool', placeMode === 4)
+    btnAddWall.classList.remove('active-tool')
+    alignRow.style.display = 'none'
+    selectedGroups = []
+    document.getElementById('btn-combine').style.display = 'none'
+})
+
+// Handle dynamic grid resizing
+const inputCols = document.getElementById('grid-cols')
+const inputRows = document.getElementById('grid-rows')
+
+function handleGridResize() {
+    const c = parseInt(inputCols.value)
+    const r = parseInt(inputRows.value)
+    if (!isNaN(c) && c > 0 && !isNaN(r) && r > 0 && typeof resizeGrid === 'function') {
+        resizeGrid(c, r)
+    }
+}
+
+if (inputCols) {
+    inputCols.addEventListener('input', handleGridResize)
+}
+if (inputRows) {
+    inputRows.addEventListener('input', handleGridResize)
+}
+
+// Revert to last saved state including map layout changes
 document.getElementById('btn-undo').addEventListener('click', () => {
     if (historyStack.length > 0) {
         const lastState = historyStack.pop()
@@ -148,6 +237,26 @@ document.getElementById('btn-undo').addEventListener('click', () => {
         OBS_HEIGHT = lastState.oh
         ZOOM = lastState.z
         ROTATION = lastState.r
+        
+        if (lastState.m) {
+            // Restore actual array dimensions in case an undo reverts a resize event
+            MAP_ROWS = lastState.m.length
+            MAP_COLS = lastState.m[0].length
+            levelMap = Array.from({ length: MAP_ROWS }, () => Array(MAP_COLS).fill(0))
+            colWidths = Array(MAP_COLS).fill(1.0)
+            rowDepths = Array(MAP_ROWS).fill(1.0)
+
+            for (let r = 0; r < MAP_ROWS; r++) {
+                for (let c = 0; c < MAP_COLS; c++) {
+                    levelMap[r][c] = lastState.m[r][c]
+                }
+            }
+            
+            // Sync UI text fields back to restored dimensions
+            if (inputCols) inputCols.value = MAP_COLS
+            if (inputRows) inputRows.value = MAP_ROWS
+            if (typeof autoFitLevel === 'function') autoFitLevel()
+        }
         
         sizeSlider.value = TILE_SIZE
         pitchSlider.value = CAMERA_PITCH
@@ -163,8 +272,12 @@ document.getElementById('btn-undo').addEventListener('click', () => {
         zoomVal.innerText = ZOOM.toFixed(1)
         rotVal.innerText = ROTATION
         
+        if (typeof updateAlignLabel === 'function') updateAlignLabel()
+        
         tileHeights[1] = WALL_HEIGHT
         tileHeights[5] = WALL_HEIGHT
+        tileHeights[11] = WALL_HEIGHT; tileHeights[12] = WALL_HEIGHT; tileHeights[13] = WALL_HEIGHT; tileHeights[14] = WALL_HEIGHT;
+        tileHeights[51] = WALL_HEIGHT; tileHeights[52] = WALL_HEIGHT; tileHeights[53] = WALL_HEIGHT; tileHeights[54] = WALL_HEIGHT;
         tileHeights[4] = OBS_HEIGHT
     }
 })

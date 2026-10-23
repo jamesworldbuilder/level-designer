@@ -34,6 +34,24 @@ canvas {
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
 }
 
+/* Style dynamic stats display at top of control panel */
+#stats-panel {
+    font-size: 11px;
+    background: #222;
+    padding: 6px 8px;
+    border: 1px solid #444;
+    margin-bottom: 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    color: #ccc;
+}
+
+#stats-panel span {
+    color: #fff;
+    font-weight: bold;
+}
+
 /* Flex layout for aligned slider rows */
 .control-row {
     display: flex;
@@ -126,9 +144,41 @@ canvas {
     background-color: #777;
 }
 
+/* Style dynamic number inputs and their native spin arrows */
+#controls input.grid-input {
+    width: 48px;
+    height: 24px;
+    background: #222;
+    color: #fff;
+    border: 1px solid #555;
+    font-size: 12px;
+    text-align: center;
+    border-radius: 0;
+    outline: none;
+}
+
+#controls input.grid-input::-webkit-inner-spin-button,
+#controls input.grid-input::-webkit-outer-spin-button {
+    opacity: 1;
+    height: 24px;
+    cursor: pointer;
+    /* Use a CSS filter to invert the native light UI arrows to match our dark #555 buttons */
+    filter: invert(70%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(90%) contrast(90%);
+}
+
+#controls input.grid-input::-webkit-inner-spin-button:hover,
+#controls input.grid-input::-webkit-outer-spin-button:hover {
+    filter: invert(50%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(120%) contrast(100%);
+}
+
 /* Apply hover effects to buttons */
 #controls button:hover {
     background-color: #777;
+}
+
+/* Highlight active object placement button */
+#controls button.active-tool {
+    background-color: #ff0044;
 }
 
 /* Style the code export text area */
